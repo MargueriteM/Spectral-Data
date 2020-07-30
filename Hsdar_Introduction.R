@@ -6,7 +6,7 @@
 library(hsdar)
 
 # set working directory
-setwd("~/Desktop/R/R_programs/Tweedie/Hsdar_Tutorial")
+setwd("~/Desktop/R/R_programs/Tweedie/Hsdar_Tutorial/Hsdar")
 
 # import data as csv file
 dat.sample <- read.csv("ASTRAL_DB_Example_Dataset_HSDAR.csv", header=FALSE)
@@ -27,6 +27,23 @@ wavelength.sample <- unlist(dat.sample[1,2:ncol(dat.sample)])
 # the code from Ifeanyi will work on data frames and so probably need to play around a bit for it to work on this vector
 rowid.sample <- as.character(dat.sample[2:nrow(dat.sample),1])
 
+# 2. Extract metadata from data file. 
+dat.metadata$id <- rowid.sample
+
+# split the id string into seperate parts
+dat.metadata$location <- as.factor(sapply(strsplit(dat.metadata$id,"_"),"[",1))
+# project is the second part of each id string
+dat.metadata$site <- as.factor(sapply(strsplit(dat.metadata$id,"_"),"[",2))
+# plot is the third part
+dat.metadata$plot <-as.factor(sapply(strsplit(dat.metadata$id,"_"),"[",3))
+# DOY is the fifth part of id
+dat.metadata$DOY <- as.numeric(sapply(strsplit(dat.metadata$id,"_"),"[",5))
+# time is the sixth part
+dat.metadata$time <- as.factor(sapply(strsplit(dat.metadata$id,"_"),"[",6))
+# year is the seventh part
+dat.metadata$year <- as.numeric(sapply(strsplit(dat.metadata$id,"_"),"[",7))
+
+
 # 3. extract just the data to use: REFLECTANCE VALUES ONLY!!! 
 dat.use <- as.matrix(dat.sample[2:nrow(dat.sample),2:ncol(dat.sample)])
 
@@ -34,7 +51,7 @@ dat.use <- as.matrix(dat.sample[2:nrow(dat.sample),2:ncol(dat.sample)])
 speclib.test <- speclib(dat.use, wavelength.sample)
 
 # 5. add the metadata (plot ID info) to speclib
-SI(speclib.test) <- rowid.sample
+SI(speclib.test) <- dat.metadata #rowid.sample
 names(SI(speclib.test))
 
 # Now you are ready to work with the speclib!!! 
@@ -50,8 +67,13 @@ plot(sl.short, FUN = 2, col = "blue", new = FALSE)
 
 
 # plot using ID name to extract specific records from two different plots
-plot(subset(sl.short,V1=="Brw_MISP_45_PL_215_11:54_2017_REFL"))
-plot(subset(sl.short,V1=="Brw_MISP_44_PL_215_11:54_2017_REFL"), new=FALSE, col="green")
+plot(subset(sl.short,id=="Brw_MISP_45_PL_215_11:54_2017_REFL"))
+plot(subset(sl.short,id=="Brw_MISP_44_PL_215_11:54_2017_REFL"), new=FALSE, col="green")
+
+# could also plot all MISP spectra
+# (I think default of Hsdar is to show a mean when multiple spectra are selected)
+plot(subset(sl.short,site=="MISP"))
+
 
 # Resample to satellite data (section 5.5)
 get.sensor.characteristics(0)
@@ -61,9 +83,25 @@ spectral_data_LS8 <- spectralResampling(sl.short,"Landsat8")
 spectral_data_LS4 <- spectralResampling(sl.short,"Landsat4")
 
 # plot measured data and resampled data from the same plot
-plot(subset(sl.short,V1=="Brw_MISP_45_PL_215_11:54_2017_REFL"))
-plot(subset(spectral_data_LS8,V1=="Brw_MISP_45_PL_215_11:54_2017_REFL"), new=FALSE, col="green")
-plot(subset(spectral_data_LS4,V1=="Brw_MISP_45_PL_215_11:54_2017_REFL"), new=FALSE, col="blue")
+plot(subset(sl.short,id=="Brw_MISP_45_PL_215_11:54_2017_REFL"))
+plot(subset(spectral_data_LS8,id=="Brw_MISP_45_PL_215_11:54_2017_REFL"), new=FALSE, col="green")
+plot(subset(spectral_data_LS4,id=="Brw_MISP_45_PL_215_11:54_2017_REFL"), new=FALSE, col="blue")
+
+# or could do it for all of MISP
+plot(subset(sl.short,site=="MISP"))
+plot(subset(spectral_data_LS8,site=="MISP"), new=FALSE, col="green")
+
+# plot multiple things
+# NOTE: scales are not the same. have to figure out how to set axes in plot() function
+
+par(mfrow=c(1,2))    # set the plotting area into a 1*2 array
+# or could do it for all of MISP
+plot(subset(sl.short,site=="MISP"), main="Brw MISP", ylim=c(-100,400))
+plot(subset(spectral_data_LS8,site=="MISP"), new=FALSE, col="green")
+
+# or could do it for all of CAlM
+plot(subset(sl.short,site=="CALM"), main="Brw CALM", ylim=c(-100,400))
+plot(subset(spectral_data_LS8,site=="CALM"), new=FALSE, col="green")
 
 
 # Chapter 7: Calculating Indices
@@ -80,7 +118,7 @@ choose.index <- c("NDVI","CARI","TCARI")
 
 vi <- vegindex(sl.short,index=choose.index)
 
-vi <- cbind(rowid.sample,vi)
+vi <- cbind(dat.metadata,vi)
 
 # graph by index number using plot
 plot(vi$NDVI)
@@ -89,11 +127,36 @@ plot(vi$NDVI)
 rd <- rededge(sl.short)
 
 # add sample ID
-rd <- cbind(rowid.sample, rd)
+rd <- cbind(dat.metadata, rd)
 
-ggplot(rd, aes(x=rowid.sample, y=R0))+geom_point()
-ggplot(rd, aes(rowid.sample, l0))+geom_point()
-ggplot(rd, aes(rowid.sample, Rp))+geom_point()
-ggplot(rd, aes(rowid.sample, lp))+geom_point()
+# The output of the index calculator is a data frame so you can merge it to the metadata and 
+# work with it like you typically would in R. 
+# eg, could combine the indices and red edge:
 
-ggplot(vi,aes(NDVI))+geom_density()
+colnames (rd)
+vi.rd <- merge(vi,rd,by=c("id","location","site","plot","DOY","time","year"))
+
+# eg, coul plot NDVI by DOY for the different sample locations and sites
+ggplot(vi.rd, aes(DOY,NDVI, colour=factor(paste(location,site,plot,sep="_"))))+
+  geom_point()+
+  geom_line()+
+  facet_grid(location~site)
+
+# eg, could plot NDVI by year for the different sample locations and sites
+ggplot(vi.rd, aes(year,NDVI, colour=factor(paste(location,site,plot,sep="_"))))+
+  geom_point()+
+  geom_line()+
+  facet_grid(location~site)
+
+# eg, or change index, and coul plot CARI by DOY for the different sample locations and sites
+ggplot(vi.rd, aes(DOY,CARI, colour=factor(paste(location,site,plot,sep="_"))))+
+  geom_point()+
+  geom_line()+
+  facet_grid(location~site)
+
+# eg, plot CARI for each DOY and split by years 
+ggplot(vi.rd, aes(DOY,CARI, colour=factor(paste(location,site,plot,sep="_"))))+
+  geom_point()+
+  geom_line()+
+  facet_grid(year~site)+
+  theme(legend.position = "none") # suppress legend
